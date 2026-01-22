@@ -7,7 +7,8 @@ Chapter Marker Studio is a simple Linux GUI for managing video chapter metadata.
 ## Features
 - Embedded video player for precise marking.
 - Add/Remove chapter markers.
-- Scan for existing markers or black frames (powered by `mkchap` by Jason Doves).
+- Scan for and edit  existing markers
+- Scan for black frames (powered by `mkchap` by Jason Doves).
 
 ## Status & License
 This project is open source and free to use. It is provided "as-is" without plans for future updates. Feel free to fork and edit the code.
