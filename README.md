@@ -1,6 +1,6 @@
 # Chapter Marker Studio
 
-![App Screenshot](screenshot.png)
+![App Screenshot](cms_screenshot.png)
 
 Chapter Marker Studio is a simple Linux GUI for managing video chapter metadata. 
 
