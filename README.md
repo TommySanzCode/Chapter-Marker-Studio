@@ -1,4 +1,4 @@
-# Chapter Marker Studio
+# Chapter Marker Studio - Windows
 
 ![App Screenshot](cms_screenshot.png)
 
