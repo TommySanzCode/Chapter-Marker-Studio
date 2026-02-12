@@ -170,13 +170,15 @@ class ChapterStudio(QMainWindow):
         self.spin_thresh = QDoubleSpinBox()
         self.spin_thresh.setRange(0.01, 1.0)
         self.spin_thresh.setValue(0.05)
+        self.spin_thresh.setSingleStep(0.01)
         v_thresh.addWidget(self.spin_thresh)
         settings_row.addLayout(v_thresh)
         
         v_dur = QVBoxLayout()
-        v_dur.addWidget(QLabel("Min Duration (s) (0.1 - 10.0):"))
+        v_dur.addWidget(QLabel("Min Duration (s) (0.10 - 10.0):"))
         self.spin_dur = QDoubleSpinBox()
-        self.spin_dur.setRange(0.1, 10.0)
+        self.spin_dur.setRange(0.10, 10.0)
+        self.spin_dur.setSingleStep(0.10)
         self.spin_dur.setValue(0.5)
         v_dur.addWidget(self.spin_dur)
         settings_row.addLayout(v_dur)
@@ -239,7 +241,27 @@ class ChapterStudio(QMainWindow):
         right_column.addWidget(self.save_progress)
 
         self.btn_load_video = QPushButton("Load Video File...")
+        self.btn_load_video.setEnabled(True)
+        self.btn_load_video.setStyleSheet("""
+            QPushButton {
+                background-color: #444;
+                color: white;
+                border: 1px solid #666;
+                padding: 8px 12px;
+                text-align: center;
+                font-family: monospace;
+            }
+            QPushButton:disabled {
+                background-color: #2e2e2e;
+                color: #ccffcc;
+                border: 1px solid #555;
+            }
+        """)
+        self.btn_load_video.setMinimumWidth(340)
+        self.btn_load_video.setMaximumWidth(380)
         self.btn_load_video.clicked.connect(self.open_file_dialog)
+        self.btn_load_video.setMaximumWidth(280)
+        self.original_load_button_text = "Load Video File..."
         right_column.addWidget(self.btn_load_video)
 
         master_layout.addLayout(right_column, stretch=1)
@@ -288,9 +310,19 @@ class ChapterStudio(QMainWindow):
             self.media_player.setSource(QUrl.fromLocalFile(file_path))
             self.chapter_list.clear()
             self.add_chapter_to_ui(0, "Start")
-            self.btn_load_video.setText(f"File: {os.path.basename(file_path)}")
+            filename = os.path.basename(file_path)
+            display_text = f"File: {filename}"
+
+            # If very long → show ellipsis at the beginning + last part
+            max_chars = 38   # adjust this number if you want more/less text visible
+            if len(display_text) > max_chars:
+                visible_part = filename[-(max_chars-10):]   # show last ~28 chars
+                display_text = f"File: …{visible_part}"
+
+            self.btn_load_video.setText(display_text)
             self.media_player.play()
             pygame.mixer.music.play()
+            self.btn_load_video.setEnabled(False)
 
     def confirm_scan(self):
         if not self.active_video_path: return
@@ -509,9 +541,12 @@ class ChapterStudio(QMainWindow):
 
         if reply == QMessageBox.Yes:
             self.media_player.stop()
+            self.media_player.setSource(QUrl())
             if self.temp_wav: pygame.mixer.music.stop()
+            if self.temp_wav: pygame.mixer.music.unload()
             self.active_video_path = None
             self.chapter_list.clear()
+            self.btn_load_video.setEnabled(True)
             self.btn_load_video.setText("Load Video File...")
             self.resequence_names()
             self.edit_name.clear()
@@ -522,6 +557,7 @@ class ChapterStudio(QMainWindow):
         if self.temp_wav and os.path.exists(self.temp_wav):
             try: os.remove(self.temp_wav)
             except: pass
+            self.temp_wav = None
 
     def nudge_frame(self, ms_offset):
         item = self.chapter_list.currentItem()
