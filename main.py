@@ -14,8 +14,8 @@ from PySide6.QtWidgets import (QApplication, QMainWindow, QLabel,
                                QTimeEdit, QDoubleSpinBox)
 from PySide6.QtMultimedia import QMediaPlayer
 from PySide6.QtMultimediaWidgets import QVideoWidget
-from PySide6.QtCore import Qt, QUrl, QTime, QProcess, QObject, QEvent, QTimer, QRect
-from PySide6.QtGui import QKeyEvent, QPainter, QColor, QPen
+from PySide6.QtCore import Qt, QUrl, QTime, QProcess, QObject, QEvent, QTimer, QRect, QPoint
+from PySide6.QtGui import QKeyEvent, QPainter, QColor, QPen, QLinearGradient, QBrush, QPolygon
 
 LOG_FILE = os.path.expanduser("~/last_app_run.log")
 logging.basicConfig(
@@ -42,23 +42,28 @@ class FrameStepTimeEdit(QTimeEdit):
 class ChapterSlider(QSlider):
     def __init__(self, orientation, parent=None):
         super().__init__(orientation, parent)
-        self.markers = [] 
+        self.markers = []
 
     def set_markers(self, markers):
         self.markers = markers
-        self.update() 
+        self.update()
 
     def paintEvent(self, event):
         super().paintEvent(event)
         if not self.markers or self.maximum() <= 0:
             return
         painter = QPainter(self)
-        pen = QPen(QColor(0, 191, 255)) 
-        pen.setWidth(2)
-        painter.setPen(pen)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         for ms in self.markers:
             x = self.style().sliderPositionFromValue(0, self.maximum(), ms, self.width())
-            painter.drawLine(x, 0, x, self.height())
+            if x <= 0 or x >= self.width():
+                continue
+            # Draw small triangle "flag" at marker position
+            h = self.height()
+            pts = [QPoint(x, h), QPoint(x - 5, h - 8), QPoint(x + 5, h - 8)]
+            painter.setPen(QPen(QColor(245, 158, 11), 1))
+            painter.setBrush(QBrush(QColor(245, 158, 11)))
+            painter.drawPolygon(QPolygon(pts))
         painter.end()
 
 class GlobalHotkeyFilter(QObject):
@@ -88,7 +93,7 @@ class ChapterStudio(QMainWindow):
         self.temp_wav = None
         self.active_video_path = None
         self.video_duration_ms = 0
-        self.mkchap_path = os.path.expanduser("~/mkchap/bin/Debug/net8.0/mkchap")
+        self.mkchap_path = self._find_mkchap()
         
         self.hotkey_filter = GlobalHotkeyFilter(self, self.handle_global_hotkeys)
         qApp.installEventFilter(self.hotkey_filter)
@@ -112,6 +117,21 @@ class ChapterStudio(QMainWindow):
         self.is_scrubbing = False
         self.scan_stdout_buffer = ""
 
+    def _find_mkchap(self):
+        """Find mkchap executable: next to app (when frozen), then PATH, then Linux default."""
+        if getattr(sys, "frozen", False):
+            app_dir = os.path.dirname(sys.executable)
+            for name in ("mkchap", "mkchap.exe"):
+                path = os.path.join(app_dir, name)
+                if os.path.isfile(path) and os.access(path, os.X_OK):
+                    return path
+        path_in_path = shutil.which("mkchap")
+        if path_in_path:
+            return path_in_path
+        # Linux default (e.g. from source or older config)
+        default = os.path.expanduser("~/mkchap/bin/Debug/net8.0/mkchap")
+        return default if os.path.isfile(default) and os.access(default, os.X_OK) else "mkchap"
+
     def init_ui(self):
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
@@ -119,39 +139,37 @@ class ChapterStudio(QMainWindow):
 
         left_column = QVBoxLayout()
         self.video_widget = QVideoWidget()
-        self.video_widget.setStyleSheet("background-color: black; border: 1px solid #444;")
+        self.video_widget.setObjectName("videoWidget")
         left_column.addWidget(self.video_widget, stretch=5)
 
         player_suite = QFrame()
-        player_suite.setStyleSheet("background-color: #1a1a1a; border-radius: 4px;")
+        player_suite.setObjectName("playerSuite")
         suite_layout = QVBoxLayout(player_suite)
-        
+
         self.slider = ChapterSlider(Qt.Orientation.Horizontal)
+        self.slider.setMinimumHeight(28)
         self.slider.sliderPressed.connect(self.on_slider_pressed)
         self.slider.sliderReleased.connect(self.on_slider_released)
         self.slider.sliderMoved.connect(self.set_position)
         suite_layout.addWidget(self.slider)
 
         ctrl_row = QHBoxLayout()
-        btn_style = "QPushButton { background-color: #333; color: white; border: 1px solid #555; padding: 8px 20px; border-radius: 4px; font-weight: bold; } QPushButton:hover { background-color: #444; } "
         
         self.btn_play = QPushButton("Play")
-        self.btn_play.setStyleSheet(btn_style)
         self.btn_play.clicked.connect(self.toggle_playback)
         ctrl_row.addWidget(self.btn_play)
 
         self.btn_stop = QPushButton("Unload")
-        self.btn_stop.setStyleSheet(btn_style)
         self.btn_stop.clicked.connect(self.stop_playback)
         ctrl_row.addWidget(self.btn_stop)
 
         self.time_label = QLabel("00:00:00.000")
-        self.time_label.setStyleSheet("font-family: monospace; font-size: 24px; color: #00FF00; padding: 0 20px;")
+        self.time_label.setObjectName("timeDisplay")
         ctrl_row.addWidget(self.time_label)
-        ctrl_row.addStretch() 
-        
+        ctrl_row.addStretch()
+
         self.btn_add_marker = QPushButton("+ Add Marker (M)")
-        self.btn_add_marker.setStyleSheet("background-color: #2e7d32; color: white; font-weight: bold; padding: 8px 15px;")
+        self.btn_add_marker.setObjectName("addMarkerButton")
         self.btn_add_marker.clicked.connect(self.add_manual_marker)
         ctrl_row.addWidget(self.btn_add_marker)
 
@@ -185,7 +203,7 @@ class ChapterStudio(QMainWindow):
         
         scan_layout.addLayout(settings_row)
         self.btn_run_scan = QPushButton("SCAN VIDEO FILE FOR BLACK FRAMES")
-        self.btn_run_scan.setStyleSheet("background-color: #3d5afe; color: black; height: 40px;")
+        self.btn_run_scan.setObjectName("scanButton")
         self.btn_run_scan.clicked.connect(self.confirm_scan)
         scan_layout.addWidget(self.btn_run_scan)
         
@@ -225,14 +243,14 @@ class ChapterStudio(QMainWindow):
         edit_layout.addLayout(nudge_layout)
         
         self.btn_rem_marker = QPushButton("Delete Selected Marker (R)")
-        self.btn_rem_marker.setStyleSheet("background-color: #ff0000; color: black; bold;")
+        self.btn_rem_marker.setObjectName("deleteMarkerButton")
         self.btn_rem_marker.clicked.connect(self.remove_selected_marker)
         edit_layout.addWidget(self.btn_rem_marker)
         self.edit_group.setLayout(edit_layout)
         right_column.addWidget(self.edit_group)
 
         self.btn_save_video = QPushButton("WRITE CHAPTERS TO VIDEO FILE")
-        self.btn_save_video.setStyleSheet("background-color: #ef6c00; color: black; height: 50px;")
+        self.btn_save_video.setObjectName("saveChaptersButton")
         self.btn_save_video.clicked.connect(self.confirm_write)
         right_column.addWidget(self.btn_save_video)
         
@@ -242,29 +260,190 @@ class ChapterStudio(QMainWindow):
 
         self.btn_load_video = QPushButton("Load Video File...")
         self.btn_load_video.setEnabled(True)
-        self.btn_load_video.setStyleSheet("""
-            QPushButton {
-                background-color: #444;
-                color: white;
-                border: 1px solid #666;
-                padding: 8px 12px;
-                text-align: center;
-                font-family: monospace;
-            }
-            QPushButton:disabled {
-                background-color: #2e2e2e;
-                color: #ccffcc;
-                border: 1px solid #555;
-            }
-        """)
-        self.btn_load_video.setMinimumWidth(340)
-        self.btn_load_video.setMaximumWidth(380)
+        self.btn_load_video.setObjectName("loadVideoButton")
+        self.btn_load_video.setMinimumWidth(280)
         self.btn_load_video.clicked.connect(self.open_file_dialog)
-        self.btn_load_video.setMaximumWidth(280)
         self.original_load_button_text = "Load Video File..."
         right_column.addWidget(self.btn_load_video)
 
         master_layout.addLayout(right_column, stretch=1)
+
+        self._apply_styles()
+
+    def _apply_styles(self):
+        self.setStyleSheet("""
+            QMainWindow, QWidget {
+                background-color: #18181b;
+            }
+            QFrame#playerSuite {
+                background-color: #27272a;
+                border: 1px solid #3f3f46;
+                border-radius: 6px;
+                padding: 12px;
+            }
+            QVideoWidget#videoWidget {
+                background-color: #09090b;
+                border: 1px solid #3f3f46;
+                border-radius: 6px;
+            }
+            QSlider::groove:horizontal {
+                border: none;
+                height: 8px;
+                background: #3f3f46;
+                border-radius: 4px;
+            }
+            QSlider::sub-page:horizontal {
+                background: #f59e0b;
+                border-radius: 4px;
+            }
+            QSlider::handle:horizontal {
+                width: 16px;
+                height: 16px;
+                margin: -4px 0;
+                background: #fafafa;
+                border: 1px solid #a1a1aa;
+                border-radius: 8px;
+            }
+            QSlider::handle:horizontal:hover {
+                background: #fef3c7;
+                border-color: #f59e0b;
+            }
+            QPushButton {
+                background-color: #3f3f46;
+                color: #fafafa;
+                border: 1px solid #52525b;
+                padding: 8px 16px;
+                border-radius: 6px;
+                font-weight: 500;
+                min-height: 20px;
+            }
+            QPushButton:hover {
+                background-color: #52525b;
+                border-color: #71717a;
+            }
+            QPushButton:pressed {
+                background-color: #27272a;
+            }
+            QPushButton#addMarkerButton {
+                background-color: #15803d;
+                color: #fff;
+                border-color: #16a34a;
+            }
+            QPushButton#addMarkerButton:hover {
+                background-color: #16a34a;
+            }
+            QPushButton#scanButton {
+                background-color: #1d4ed8;
+                color: #fff;
+                border-color: #2563eb;
+                min-height: 40px;
+            }
+            QPushButton#scanButton:hover {
+                background-color: #2563eb;
+            }
+            QPushButton#deleteMarkerButton {
+                background-color: #b91c1c;
+                color: #fff;
+                border-color: #dc2626;
+            }
+            QPushButton#deleteMarkerButton:hover {
+                background-color: #dc2626;
+            }
+            QPushButton#saveChaptersButton {
+                background-color: #c2410c;
+                color: #fff;
+                border-color: #ea580c;
+                min-height: 50px;
+            }
+            QPushButton#saveChaptersButton:hover {
+                background-color: #ea580c;
+            }
+            QPushButton#loadVideoButton {
+                min-width: 280px;
+            }
+            QPushButton#loadVideoButton:disabled {
+                background-color: #27272a;
+                color: #fcd34d;
+                border-color: #d97706;
+            }
+            QLabel#timeDisplay {
+                font-family: "Consolas", "SF Mono", "Monaco", monospace;
+                font-size: 20px;
+                font-weight: 600;
+                color: #f59e0b;
+                padding: 0 16px;
+            }
+            QGroupBox {
+                font-weight: 600;
+                font-size: 13px;
+                border: 1px solid #3f3f46;
+                border-radius: 6px;
+                margin-top: 12px;
+                padding: 14px;
+                padding-top: 20px;
+                background-color: #27272a;
+                color: #e4e4e7;
+            }
+            QGroupBox::title {
+                subcontrol-origin: margin;
+                subcontrol-position: top left;
+                left: 12px;
+                padding: 2px 8px;
+                background-color: #18181b;
+                border-radius: 4px;
+                color: #a1a1aa;
+            }
+            QListWidget {
+                background-color: #18181b;
+                border: 1px solid #3f3f46;
+                border-radius: 6px;
+                padding: 4px;
+                color: #e4e4e7;
+                font-size: 13px;
+            }
+            QListWidget::item {
+                padding: 8px 10px;
+                border-radius: 4px;
+            }
+            QListWidget::item:selected {
+                background-color: #b45309;
+                color: #fff;
+            }
+            QListWidget::item:hover:!selected {
+                background-color: #3f3f46;
+            }
+            QLineEdit, QDoubleSpinBox {
+                background-color: #18181b;
+                border: 1px solid #52525b;
+                border-radius: 4px;
+                padding: 8px 10px;
+                color: #fafafa;
+                font-size: 13px;
+            }
+            QLineEdit:focus, QDoubleSpinBox:focus {
+                border-color: #f59e0b;
+            }
+            QDoubleSpinBox::up-button, QDoubleSpinBox::down-button {
+                background-color: #3f3f46;
+                border: none;
+                width: 18px;
+            }
+            QProgressBar {
+                border: none;
+                height: 6px;
+                background: #3f3f46;
+                border-radius: 3px;
+                text-align: center;
+            }
+            QProgressBar::chunk {
+                background: #f59e0b;
+                border-radius: 3px;
+            }
+            QLabel {
+                color: #a1a1aa;
+                font-size: 13px;
+            }
+        """)
 
     def handle_global_hotkeys(self, event):
         if event.key() == Qt.Key_Space:
@@ -550,7 +729,8 @@ class ChapterStudio(QMainWindow):
             self.btn_load_video.setText("Load Video File...")
             self.resequence_names()
             self.edit_name.clear()
-            self.edit_time.setTime(QTime(0, 0))
+            if hasattr(self, "edit_time") and self.edit_time:
+                self.edit_time.setTime(QTime(0, 0))
             self.btn_play.setText("Play")
             self.time_label.setText("00:00:00.000")
             self.slider.setValue(0)
@@ -579,7 +759,8 @@ class ChapterStudio(QMainWindow):
         if not self.is_scrubbing: self.slider.setValue(pos)
         self.time_label.setText(QTime(0, 0).addMSecs(pos).toString("HH:mm:ss.zzz"))
 
-    def update_duration(self, dur): self.slider.setRange(0, dur)
+    def update_duration(self, dur):
+        self.slider.setRange(0, dur)
     def on_slider_pressed(self): self.is_scrubbing = True
     def on_slider_released(self):
         self.is_scrubbing = False
