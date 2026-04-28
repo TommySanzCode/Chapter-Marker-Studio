@@ -2,7 +2,7 @@
 
 ![App Screenshot](cms_screenshot.png)
 
-Chapter Marker Studio is a simple Linux GUI for managing video chapter metadata. 
+Chapter Marker Studio is a simple GUI for managing video chapter metadata.
 
 ## Features
 - Embedded video player for precise marking.
@@ -16,8 +16,9 @@ This project is open source and free to use. It is provided "as-is" without plan
 ## Prerequisites
 - `ffmpeg`
 - `ffprobe`
+- .NET 8 Runtime (Windows build)
 
 ## How to Run
-1. Download the `ChapterMarkerStudio` binary from [Releases](../../releases) section.
-2. Run `chmod +x ChapterMarkerStudio`.
-3. Launch via `./ChapterMarkerStudio`.
+1. Download one of the `ChapterMarkerStudio` zips from [Releases](../../releases) section.
+2. Extract to any location you prefer
+3. Launch via `ChapterMarkerStudio.exe`.
